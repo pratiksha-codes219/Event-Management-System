@@ -2,44 +2,35 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-import mysql.connector
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from psycopg2 import IntegrityError, Error
 from datetime import date
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY")
 
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME")
-}
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 def get_connection():
-    return mysql.connector.connect(**DB_CONFIG)
+    return psycopg2.connect(
+        DATABASE_URL,
+        sslmode="require"
+    )
 
 
 def initialize_database():
-    conn = mysql.connector.connect(
-        host=DB_CONFIG["host"],
-        user=DB_CONFIG["user"],
-        password=DB_CONFIG["password"]
-    )
-    cur = conn.cursor()
-    cur.execute("CREATE DATABASE IF NOT EXISTS event_management")
-    cur.close()
-    conn.close()
-
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            user_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id SERIAL PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
             email VARCHAR(120) UNIQUE NOT NULL,
             phone VARCHAR(20) NOT NULL,
@@ -50,7 +41,7 @@ def initialize_database():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS events (
-            event_id INT AUTO_INCREMENT PRIMARY KEY,
+            event_id SERIAL PRIMARY KEY,
             event_name VARCHAR(150) NOT NULL,
             description TEXT NOT NULL,
             event_date DATE NOT NULL,
@@ -63,33 +54,28 @@ def initialize_database():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS registrations (
-            registration_id INT AUTO_INCREMENT PRIMARY KEY,
+            registration_id SERIAL PRIMARY KEY,
             user_id INT NOT NULL,
             event_id INT NOT NULL,
             registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status VARCHAR(30) NOT NULL DEFAULT 'Registered',
-            UNIQUE KEY unique_user_event (user_id, event_id),
+            UNIQUE (user_id, event_id),
             FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
             FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE
         )
     """)
 
-    cur.execute(
-        "SELECT user_id FROM users WHERE email=%s",
-        ("admin@event.com",)
-    )
-
-    if cur.fetchone() is None:
-        cur.execute("""
-            INSERT INTO users
-            (name, email, phone, password_hash, role)
-            VALUES (%s, %s, %s, %s, 'admin')
-        """, (
-            "Administrator",
-            "admin@event.com",
-            "9999999999",
-            generate_password_hash("admin123")
-        ))
+    cur.execute("""
+        INSERT INTO users
+        (name, email, phone, password_hash, role)
+        VALUES (%s, %s, %s, %s, 'admin')
+        ON CONFLICT (email) DO NOTHING
+    """, (
+        "Administrator",
+        "admin@event.com",
+        "9999999999",
+        generate_password_hash("admin123")
+    ))
 
     conn.commit()
     cur.close()
@@ -125,8 +111,7 @@ def admin_required(fn):
 @app.route("/")
 def home():
     conn = get_connection()
-    cur = conn.cursor(dictionary=True)
-
+    cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("""
         SELECT e.*,
         (SELECT COUNT(*) FROM registrations r
@@ -179,7 +164,7 @@ def register():
             flash("Registration successful. Please login.", "success")
             return redirect(url_for("login"))
 
-        except mysql.connector.IntegrityError:
+        except IntegrityError:
             flash("Email already registered.", "danger")
 
         finally:
@@ -196,7 +181,7 @@ def login():
         password = request.form.get("password", "")
 
         conn = get_connection()
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
 
         cur.execute("""
             SELECT * FROM users
@@ -228,7 +213,7 @@ def admin_login():
         password = request.form.get("password", "")
 
         conn = get_connection()
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
 
         cur.execute("""
             SELECT * FROM users
@@ -263,7 +248,7 @@ def logout():
 @app.route("/event/<int:event_id>")
 def event_details(event_id):
     conn = get_connection()
-    cur = conn.cursor(dictionary=True)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("""
         SELECT e.*,
@@ -289,7 +274,7 @@ def event_details(event_id):
 @user_required
 def event_register_form(event_id):
     conn = get_connection()
-    cur = conn.cursor(dictionary=True)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("""
         SELECT * FROM events
@@ -311,7 +296,7 @@ def event_register_form(event_id):
 @user_required
 def register_event(event_id):
     conn = get_connection()
-    cur = conn.cursor(dictionary=True)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
         cur.execute("""
@@ -364,7 +349,7 @@ def register_event(event_id):
         conn.commit()
         flash("Event registration successful.", "success")
 
-    except mysql.connector.Error as e:
+    except Error as e:
         conn.rollback()
         flash("Registration failed. Please try again.", "danger")
 
@@ -378,7 +363,7 @@ def register_event(event_id):
 @user_required
 def my_registrations():
     conn = get_connection()
-    cur = conn.cursor(dictionary=True)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("""
         SELECT r.registration_id, r.registration_date, r.status,
@@ -429,7 +414,7 @@ def cancel_registration(registration_id):
 @admin_required
 def admin_dashboard():
     conn = get_connection()
-    cur = conn.cursor(dictionary=True)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("SELECT COUNT(*) AS total FROM events")
     total_events = cur.fetchone()["total"]
@@ -520,7 +505,7 @@ def add_event():
 @admin_required
 def edit_event(event_id):
     conn = get_connection()
-    cur = conn.cursor(dictionary=True)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("SELECT * FROM events WHERE event_id=%s", (event_id,))
     event = cur.fetchone()
@@ -597,7 +582,7 @@ def delete_event(event_id):
 @admin_required
 def admin_registrations():
     conn = get_connection()
-    cur = conn.cursor(dictionary=True)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("""
         SELECT r.registration_id, r.registration_date, r.status,
@@ -619,6 +604,6 @@ def admin_registrations():
     )
 
 
+initialize_database()
 if __name__ == "__main__":
-    initialize_database()
     app.run(debug=True)
