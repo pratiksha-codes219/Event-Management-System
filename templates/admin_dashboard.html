@@ -1,0 +1,43 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+    <h1>Admin Dashboard</h1>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/admin/registrations">All Registrations</a>
+        <a href="/logout">Logout</a>
+    </nav>
+</header>
+<main>
+    <h2>Dashboard</h2>
+    <p>Total Events: {{ total_events }}</p>
+    <p>Total Users: {{ total_users }}</p>
+    <p>Total Registrations: {{ total_registrations }}</p>
+
+    <a class="btn" href="/admin/event/add">Add New Event</a>
+
+    <h2>Manage Events</h2>
+    {% for event in events %}
+    <div class="event-card">
+        <h3>{{ event.event_name }}</h3>
+        <p>Date: {{ event.event_date }}</p>
+        <p>Venue: {{ event.venue }}</p>
+        <p>Registered: {{ event.registered_count }}</p>
+        <a href="{{ url_for('edit_event', event_id=event.event_id) }}">Edit</a>
+
+        <form method="POST" action="{{ url_for('delete_event', event_id=event.event_id) }}">
+            <button type="submit">Delete</button>
+        </form>
+    </div>
+    {% else %}
+    <p>No events added yet.</p>
+    {% endfor %}
+</main>
+</body>
+</html>

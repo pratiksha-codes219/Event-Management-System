@@ -1,0 +1,40 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manage Event</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header><h1>Manage Event</h1><a href="/admin/dashboard">Dashboard</a></header>
+<main>
+    <h2>{% if event %}Edit Event{% else %}Add Event{% endif %}</h2>
+
+    <form method="POST">
+        <input type="text" name="event_name"
+               placeholder="Event Name"
+               value="{{ event.event_name if event else '' }}" required>
+
+        <textarea name="description" placeholder="Event Description" required>{{ event.description if event else '' }}</textarea>
+
+        <label>Event Date</label>
+        <input type="date" name="event_date"
+               value="{{ event.event_date if event else '' }}" required>
+
+        <label>Event Time</label>
+        <input type="time" name="event_time"
+               value="{{ event.event_time if event else '' }}" required>
+
+        <input type="text" name="venue"
+               placeholder="Venue"
+               value="{{ event.venue if event else '' }}" required>
+
+        <input type="number" name="capacity"
+               placeholder="Capacity"
+               value="{{ event.capacity if event else 100 }}" min="1" required>
+
+        <button type="submit">Save Event</button>
+    </form>
+</main>
+</body>
+</html>
